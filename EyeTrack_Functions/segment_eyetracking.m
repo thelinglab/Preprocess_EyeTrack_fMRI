@@ -27,144 +27,81 @@ function trial = segment_eyetracking(eyeData,settings)
 fprintf('segmenting eye tracking data...');
 tic
 
-% grab block and trial markers
-nMessages = length(eyeData.messages);
-
-blockMessage = {};
-blockMessageIdx = [];
-trialMessage = {};
-trialMessageIdx = [];
-
-% loop through all messages
-bCnt = 1;
-tCnt = 1;
-for m = 1:nMessages
-
-    tmpMessage = eyeData.messages{m};
-    if length(tmpMessage) > 5 % all block and trial messages are
-        if strcmp('BLOCK',tmpMessage(1:5))
-            blockMessage{bCnt} = tmpMessage;
-            blockMessageIdx = [blockMessageIdx,m];
-            bCnt = bCnt+1;
-        end
-        if strcmp('TRIAL',tmpMessage(1:5))
-            trialMessage{tCnt} = tmpMessage;
-            trialMessageIdx = [trialMessageIdx,m];
-            tCnt = tCnt+1; 
-        end
-    end
-end
-
-% check that the number of block and trial messages match
-if length(blockMessage) ~= length(trialMessage)
-    error('the number of block messags and trial messages do not match');
-end
-
-trial.nTrials = length(blockMessage); 
-
-% check that time-locking messages are present
 timeLockInd = strcmp(settings.seg.timeLockMessage,eyeData.messages); % index the time-locking message (e.g., 'StimOnset')
-if sum(timeLockInd) == 0
-    error('Dod not find any time-locking events. Did you specify the fight event marker in the settings file?'); 
+trial.timeLockTimes = eyeData.eventTimes(timeLockInd); % times for time-locking messsage
+trial.nTrials = sum(timeLockInd); % adds up logical index to get number of trials
+
+% throw an error if no trials were found
+if trial.nTrials == 0
+    error('Did not find any trials. Did you specify the right event marker in the settings file?')
 end
 
 % save times vector for each trial
 trial.times = -settings.seg.preTime:eyeData.rateAcq:settings.seg.postTime; % time points in segment
 trial.nSamps = length(trial.times); % expected number of samples per segment
 
+% specify start and end times of each segment
+trial.startTimes = double(trial.timeLockTimes) - settings.seg.preTime; % start time, ms
+trial.endTimes = double(trial.timeLockTimes) + settings.seg.postTime;  % end time, ms
+
 % preallocate matrices for segmented data (all the same size)
-trial.gx = nan(trial.nTrials,trial.nSamps); trial.gy = trial.gx; trial.pa = trial.gx; trial.exist = trial.gx;
-trial.timeLockTimes = nan(trial.nTrials,1); trial.startTimes = trial.timeLockTimes; trial.endTimes = trial.timeLockTimes; 
+trial.xDeg = nan(trial.nTrials,trial.nSamps); trial.yDeg = trial.xDeg; trial.pa = trial.xDeg;
+trial.exist = trial.xDeg;
 
 % create structs to put data in
 trial_exist = trial.exist; 
-trial_gx = {};
-trial_gy = {};
+trial_xDeg = {};
+trial_yDeg = {};
 trial_pa = {};
+
+startTimes = trial.startTimes;
+endTimes = trial.endTimes;
 
 % loop through trials and segment data
 for t = 1:trial.nTrials
     
-     trial_gx = []; trial_gy = []; trial_pa = []; existInd = [];
+    % grab the start and end of trial t
+    tStart = startTimes(t); tEnd = endTimes(t);
     
-    % grab vector of messages for the curent trial
-    if t < trial.nTrials
-        trialIdx = blockMessageIdx(t):blockMessageIdx(t+1);
-    else
-        trialIdx = blockMessageIdx(t):nMessages;
+    % specify window of interest
+    tWindow = tStart:double(eyeData.rateAcq):tEnd; 
+    
+    % index times of interest with logical
+    tWindowInd = ismember(double(eyeData.sampleTimes),tWindow);
+    
+    % fix for when marker time is out of sync with sample points
+    if eyeData.rateAcq == 2
+        if sum(tWindowInd) == 0
+            tWindow = tWindow-1;
+            tWindowInd = ismember(double(eyeData.sampleTimes),tWindow);
+        end
     end
     
-    markTrial = zeros(1,nMessages);
-    markTrial(trialIdx) = 1;
-    
-    lockMessageIdx = zeros(1,nMessages);
-    lockMessageIdx(markTrial == 1 & timeLockInd == 1) = 1;
-    lockMessageIdx = logical(lockMessageIdx);
-        
-    % if there is a lock message for the current trial, grab data
-    if sum(lockMessageIdx) > 0
-        
-        % specify start and end times of segment
-        trial.timeLockTimes(t) = eyeData.eventTimes(lockMessageIdx); % times for time-locking messsage
-        trial.startTimes(t) = double(trial.timeLockTimes(t)) - settings.seg.preTime; % start time, ms
-        trial.endTimes(t) = double(trial.timeLockTimes(t)) + settings.seg.postTime;  % end time, ms
-        
-        % grab the start and end of trial t
-        tStart = trial.startTimes(t); tEnd = trial.endTimes(t);
-        
-        % specify window of interest
-        tWindow = tStart:double(eyeData.rateAcq):tEnd;
-        
-        % index times of interest with logical
-        tWindowInd = ismember(double(eyeData.sampleTimes),tWindow);
-        
-        % fix for when marker time is out of sync with sample points
-        if eyeData.rateAcq == 2
-            if sum(tWindowInd) == 0
-                tWindow = tWindow-1;
-                tWindowInd = ismember(double(eyeData.sampleTimes),tWindow);
-            end
-        end
-        
-        % throw an error if sampling rate is less than 500 Hz
-        if eyeData.rateAcq > 2
-            error('Sampling rate lower than 500 Hz. Have not prepared the fix above for sampling freqs lower than 500 Hz')
-        end
-        
-        % create index of the time points that actually exist in the data (i.e., that were recorded).
-        existInd = ismember(tWindow,double(eyeData.sampleTimes)); % FIXED - changed to double
-        
-        % determine which eye was recorded for trial t
-        recordedEye = eyeData.RecordedEye(t);
-        
-        % grab the relevant segment of data (from the recorded eye)
-        trial_gx = eyeData.gx(recordedEye,tWindowInd);
-        trial_gy = eyeData.gy(recordedEye,tWindowInd);
-        trial_pa = eyeData.pa(recordedEye,tWindowInd);
-        
-        % save exist to the trial structure to make it easy to check where data is missing
-        trial.exist(t,:) = existInd;
-        
-        % save to matrix;
-        trial.gx(t,existInd) = trial_gx;
-        trial.gy(t,existInd) = trial_gy;
-        trial.pa(t,existInd) = trial_pa;
-        
+    % throw an error if sampling rate is less than 500 Hz
+    if eyeData.rateAcq > 2
+        error('Sampling rate lower than 500 Hz. Have not prepared the fix above for sampling freqs lower than 500 Hz')
     end
+    
+    % create index of the time points that actually exist in the data (i.e., that were recorded).
+    existInd = ismember(tWindow,double(eyeData.sampleTimes)); % FIXED - changed to double
+        
+    % grab the relevant segment of data (from the recorded eye)
+    trial_xDeg{t} = eyeData.xDeg(tWindowInd);
+    trial_yDeg{t} = eyeData.yDeg(tWindowInd);
+    trial_pa{t} = eyeData.pa_cleaned(tWindowInd);
+    
+    % save exist to the trial structure to make it easy to check where data is missing
+    trial_exist(t,:) = existInd;
     
 end
 
-% save vector of block and trials numbers
+% put trial data into matrices (but only for points where data was actually
+% sampled)
+trial.exist = logical(trial_exist);
 for t = 1:trial.nTrials
-    
-    tmp = blockMessage{t};
-    tmp = tmp(7:end);
-    trial.blockNum(t) = str2num(tmp); 
-    
-    tmp = trialMessage{t};
-    tmp = tmp(7:end);
-    trial.trialNum(t) = str2num(tmp); 
-    
+    trial.xDeg(t,trial.exist(t,:)) = trial_xDeg{t};
+    trial.yDeg(t,trial.exist(t,:)) = trial_yDeg{t};
+    trial.pa(t,trial.exist(t,:)) = trial_pa{t};
 end
 
 % plot the missing data to alert experimenter to problems
@@ -177,3 +114,5 @@ colorbar
 
 fprintf('\n')
 toc
+
+
