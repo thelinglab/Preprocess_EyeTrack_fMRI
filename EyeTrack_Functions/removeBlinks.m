@@ -27,7 +27,7 @@ for i = pad_length+1:nSamps-pad_length
     xsamps = x(samp_idx);
     ysamps = y(samp_idx);
     
-    if max(abs(xsamps)) > settings.monitor.xPixels/2 || max(abs(ysamps)) > settings.monitor.yPixels/2
+    if max(abs(xsamps)) > settings.monitor.xPixels || max(abs(ysamps)) > settings.monitor.yPixels
        x_clean(samp_idx) = nan;
        y_clean(samp_idx) = nan;
        p_clean(samp_idx) = nan;
