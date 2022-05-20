@@ -29,16 +29,16 @@ eyeData.RecordedEye=RecordedEyeVec(RecordedEyeIdx);
 
 % eye tracking data
 eyeData.sampleTimes = [eye.FSAMPLE(:).time]; % the times at which data was sampled
-eyeData.hx = eye.FSAMPLE(:).hx(eyeData.RecordedEye,:); % head referenced x coords
-eyeData.hy = eye.FSAMPLE(:).hy(eyeData.RecordedEye,:); % head referenced y coords
+eyeData.gx = eye.FSAMPLE(:).gx(eyeData.RecordedEye,:); % head referenced x coords
+eyeData.gy = eye.FSAMPLE(:).gy(eyeData.RecordedEye,:); % head referenced y coords
 eyeData.pa = eye.FSAMPLE(:).pa(eyeData.RecordedEye,:); % head referenced pupil size / area
 
 % remove blinks
-[eyeData.hx_cleaned, eyeData.hy_cleaned, eyeData.pa_cleaned] = removeBlinks(eyeData.hx,eyeData.hy,eyeData.pa,settings);
+[eyeData.gx_cleaned, eyeData.gy_cleaned, eyeData.pa_cleaned] = removeBlinks(eyeData.gx,eyeData.gy,eyeData.pa,settings);
 
 % calculate eye position in degrees of visual angle
-eyeData.xDeg = eyeData.hx_cleaned/settings.monitor.ppd;
-eyeData.yDeg = eyeData.hy_cleaned/settings.monitor.ppd;
+eyeData.xDeg = (eyeData.gx_cleaned-settings.monitor.xPixels/2)/settings.monitor.ppd;
+eyeData.yDeg = (eyeData.gy_cleaned-settings.monitor.yPixels/2)/settings.monitor.ppd;
 
 % Segment data
 eyeData.trial = segment_eyetracking(eyeData,settings); 
